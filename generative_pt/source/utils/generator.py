@@ -29,7 +29,7 @@ class TopKGenerator(object):
                  ignore_unk=True,
                  length_average=True,
                  use_gpu=False):
-        self.model = model.cuda() if use_gpu else model
+        self.model = model
         self.src_field = src_field
         self.tgt_field = tgt_field
         self.cue_field = cue_field

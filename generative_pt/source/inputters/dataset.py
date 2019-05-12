@@ -30,7 +30,7 @@ class Dataset(torch.utils.data.Dataset):
         return self.data[idx]
 
     @staticmethod
-    def collate_fn(device=-1):
+    def collate_fn(device=None):
         """
         collate_fn
         """
@@ -41,7 +41,7 @@ class Dataset(torch.utils.data.Dataset):
             batch = Pack()
             for key in data_list[0].keys():
                 batch[key] = list2tensor([x[key] for x in data_list])
-            if device >= 0:
+            if device:
                 batch = batch.cuda(device=device)
             return batch
         return collate

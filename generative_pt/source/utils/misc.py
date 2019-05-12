@@ -44,9 +44,13 @@ class Pack(dict):
         pack = Pack()
         for k, v in self.items():
             if isinstance(v, tuple):
-                pack[k] = tuple(x.cuda(device) for x in v)
+                if device:
+                    v = [x.cuda() for x in v]
+                pack[k] = v
             else:
-                pack[k] = v.cuda(device)
+                if device:
+                    v = v.cuda()
+                pack[k] = v
         return pack
 
 

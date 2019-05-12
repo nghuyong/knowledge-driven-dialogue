@@ -14,7 +14,7 @@ import time
 import shutil
 import numpy as np
 import torch
-
+from source.models.knowledge_seq2seq import iterate
 from collections import defaultdict
 from tensorboardX import SummaryWriter
 
@@ -26,6 +26,7 @@ class MetricsManager(object):
     """
     MetricsManager
     """
+
     def __init__(self):
         self.metrics_val = defaultdict(float)
         self.metrics_cum = defaultdict(float)
@@ -110,7 +111,7 @@ def evaluate(model, data_iter, verbose=False):
     ss = []
     with torch.no_grad():
         for inputs in data_iter:
-            metrics, scores = model.iterate(inputs=inputs, is_training=False)
+            metrics, scores = iterate(model, inputs=inputs, is_training=False)
             mm.update(metrics)
             ss.extend(scores.tolist())
     return mm, ss
@@ -120,6 +121,7 @@ class Trainer(object):
     """
     Trainer
     """
+
     def __init__(self,
                  model,
                  optimizer,
@@ -201,11 +203,11 @@ class Trainer(object):
             self.model.train()
             start_time = time.time()
             # Do a training iteration
-            metrics, _ = self.model.iterate(inputs,
-                                         optimizer=self.optimizer,
-                                         grad_clip=self.grad_clip,
-                                         is_training=True,
-                                         epoch=self.epoch)
+            metrics, _ = iterate(self.model, inputs,
+                                 optimizer=self.optimizer,
+                                 grad_clip=self.grad_clip,
+                                 is_training=True,
+                                 epoch=self.epoch)
             elapsed = time.time() - start_time
 
             train_mm.update(metrics)
@@ -270,7 +272,8 @@ class Trainer(object):
         """
         model_file = os.path.join(
             self.save_dir, "state_epoch_{}.model".format(self.epoch))
-        torch.save(self.model.state_dict(), model_file)
+        model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
+        torch.save(model_to_save.state_dict(), model_file)
         self.logger.info("Saved model state to '{}'".format(model_file))
 
         train_file = os.path.join(
@@ -355,7 +358,7 @@ def evaluate_generation(generator,
     intra_dist1, intra_dist2, inter_dist1, inter_dist2 = distinct(refs)
     avg_len = np.average([len(s) for s in refs])
     target_message = "Target:   AVG_LEN-{:.3f}   ".format(avg_len) + \
-        "Inter_Dist-{:.4f}/{:.4f}".format(inter_dist1, inter_dist2)
+                     "Inter_Dist-{:.4f}/{:.4f}".format(inter_dist1, inter_dist2)
 
     message = report_message + "\n" + target_message
 
@@ -391,7 +394,7 @@ def write_results(results, results_file):
                 f.write("Weights : {}\n".format(result.weights))
             """
             for pred, score in zip(result.preds, result.scores):
-                #f.write("Predict: {} ({:.3f})\n".format(pred, score))
-                #f.write("{}\t{:.3f}\n".format(pred, score))
+                # f.write("Predict: {} ({:.3f})\n".format(pred, score))
+                # f.write("{}\t{:.3f}\n".format(pred, score))
                 f.write("{}\n".format(pred))
-            #f.write("\n")
+            # f.write("\n")

@@ -26,6 +26,7 @@ class Seq2Seq(BaseModel):
     """
     Seq2Seq
     """
+
     def __init__(self,
                  src_vocab_size,
                  tgt_vocab_size,
@@ -110,7 +111,7 @@ class Seq2Seq(BaseModel):
         encode
         """
         outputs = Pack()
-        enc_inputs = _, lengths = inputs.src[0][:, 1:-1], inputs.src[1]-2
+        enc_inputs = _, lengths = inputs.src[0][:, 1:-1], inputs.src[1] - 2
 
         enc_outputs, enc_hidden = self.encoder(enc_inputs, hidden)
 
@@ -157,27 +158,29 @@ class Seq2Seq(BaseModel):
         metrics.add(loss=loss)
         return metrics
 
-    def iterate(self, inputs, optimizer=None, grad_clip=None, is_training=True, epoch=-1):
-        """
-        iterate
-        """
-        enc_inputs = inputs
-        dec_inputs = inputs.tgt[0][:, :-1], inputs.tgt[1] - 1
-        target = inputs.tgt[0][:, 1:]
 
-        outputs = self.forward(enc_inputs, dec_inputs)
-        metrics = self.collect_metrics(outputs, target)
+def iterate(model, inputs, optimizer=None, grad_clip=None, is_training=True, epoch=-1):
+    """
+    iterate
+    """
+    enc_inputs = inputs
+    dec_inputs = inputs.tgt[0][:, :-1], inputs.tgt[1] - 1
+    target = inputs.tgt[0][:, 1:]
 
-        loss = metrics.loss
-        if torch.isnan(loss):
-            raise ValueError("nan loss encountered")
+    outputs = model(enc_inputs, dec_inputs)
+    model = model.module if hasattr(model, 'module') else model
+    metrics, scores = model.collect_metrics(outputs, target, epoch=epoch)
 
-        if is_training:
-            assert optimizer is not None
-            optimizer.zero_grad()
-            loss.backward()
-            if grad_clip is not None and grad_clip > 0:
-                clip_grad_norm_(parameters=self.parameters(),
-                                max_norm=grad_clip)
-            optimizer.step()
-        return metrics
+    loss = metrics.loss
+    if torch.isnan(loss):
+        raise ValueError("nan loss encountered")
+
+    if is_training:
+        assert optimizer is not None
+        optimizer.zero_grad()
+        loss.backward()
+        if grad_clip is not None and grad_clip > 0:
+            clip_grad_norm_(parameters=self.parameters(),
+                            max_norm=grad_clip)
+        optimizer.step()
+    return metrics

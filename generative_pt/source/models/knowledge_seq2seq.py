@@ -25,14 +25,16 @@ from source.utils.metrics import attn_accuracy
 from source.utils.metrics import perplexity
 from source.modules.attention import Attention
 
+
 class KnowledgeSeq2Seq(BaseModel):
     """
     KnowledgeSeq2Seq
     """
+
     def __init__(self, src_vocab_size, tgt_vocab_size, embed_size, hidden_size, padding_idx=None,
-                 num_layers=1, bidirectional=True, attn_mode="mlp", attn_hidden_size=None, 
-                 with_bridge=False, tie_embedding=False, dropout=0.0, use_gpu=False, use_bow=False,
-                 use_kd=False, use_dssm=False, use_posterior=False, weight_control=False, 
+                 num_layers=1, bidirectional=True, attn_mode="mlp", attn_hidden_size=None,
+                 with_bridge=False, tie_embedding=False, dropout=0.0, use_bow=False,
+                 use_kd=False, use_dssm=False, use_posterior=False, weight_control=False,
                  use_pg=False, use_gs=False, concat=False, pretrain_epoch=0):
         super(KnowledgeSeq2Seq, self).__init__()
 
@@ -48,7 +50,6 @@ class KnowledgeSeq2Seq(BaseModel):
         self.with_bridge = with_bridge
         self.tie_embedding = tie_embedding
         self.dropout = dropout
-        self.use_gpu = use_gpu
         self.use_bow = use_bow
         self.use_dssm = use_dssm
         self.weight_control = weight_control
@@ -109,10 +110,10 @@ class KnowledgeSeq2Seq(BaseModel):
 
         if self.use_bow:
             self.bow_output_layer = nn.Sequential(
-                    nn.Linear(in_features=self.hidden_size, out_features=self.hidden_size),
-                    nn.Tanh(),
-                    nn.Linear(in_features=self.hidden_size, out_features=self.tgt_vocab_size),
-                    nn.LogSoftmax(dim=-1))
+                nn.Linear(in_features=self.hidden_size, out_features=self.hidden_size),
+                nn.Tanh(),
+                nn.Linear(in_features=self.hidden_size, out_features=self.tgt_vocab_size),
+                nn.LogSoftmax(dim=-1))
 
         if self.use_dssm:
             self.dssm_project = nn.Linear(in_features=self.hidden_size,
@@ -131,23 +132,19 @@ class KnowledgeSeq2Seq(BaseModel):
                                 reduction='mean')
         self.kl_loss = torch.nn.KLDivLoss(size_average=True)
 
-        if self.use_gpu:
-            self.cuda()
-            self.weight = self.weight.cuda()
-
     def encode(self, inputs, hidden=None, is_training=False):
         """
         encode
         """
         outputs = Pack()
-        enc_inputs = _, lengths = inputs.src[0][:, 1:-1], inputs.src[1]-2
+        enc_inputs = _, lengths = inputs.src[0][:, 1:-1], inputs.src[1] - 2
         enc_outputs, enc_hidden = self.encoder(enc_inputs, hidden)
 
         if self.with_bridge:
             enc_hidden = self.bridge(enc_hidden)
 
         # knowledge
-        batch_size, sent_num, sent  = inputs.cue[0].size()
+        batch_size, sent_num, sent = inputs.cue[0].size()
         tmp_len = inputs.cue[1]
         tmp_len[tmp_len > 0] -= 2
         cue_inputs = inputs.cue[0].view(-1, sent)[:, 1:-1], tmp_len.view(-1)
@@ -163,12 +160,12 @@ class KnowledgeSeq2Seq(BaseModel):
         # hard attention
         if self.use_gs:
             knowledge = cue_outputs.gather(1, \
-                indexs.view(-1, 1, 1).repeat(1, 1, cue_outputs.size(-1)))
+                                           indexs.view(-1, 1, 1).repeat(1, 1, cue_outputs.size(-1)))
         else:
             knowledge = weighted_cue
 
         if self.use_posterior:
-            tgt_enc_inputs = inputs.tgt[0][:, 1:-1], inputs.tgt[1]-2
+            tgt_enc_inputs = inputs.tgt[0][:, 1:-1], inputs.tgt[1] - 2
             _, tgt_enc_hidden = self.knowledge_encoder(tgt_enc_inputs, hidden)
             posterior_weighted_cue, posterior_attn = self.posterior_attention(
                 # P(z|u,r)
@@ -227,7 +224,6 @@ class KnowledgeSeq2Seq(BaseModel):
             outputs.add(weights=weights)
             knowledge = knowledge * weights.view(-1, 1, 1).repeat(1, 1, knowledge.size(-1))
 
-
         dec_init_state = self.decoder.initialize_state(
             hidden=enc_hidden,
             attn_memory=enc_outputs if self.attn_mode else None,
@@ -247,7 +243,7 @@ class KnowledgeSeq2Seq(BaseModel):
         forward
         """
         outputs, dec_init_state = self.encode(
-                enc_inputs, hidden, is_training=is_training)
+            enc_inputs, hidden, is_training=is_training)
         log_probs, _ = self.decoder(dec_inputs, dec_init_state)
         outputs.add(logits=log_probs)
         return outputs
@@ -296,20 +292,20 @@ class KnowledgeSeq2Seq(BaseModel):
                 neg_logits = outputs.neg_logits
                 neg_target = torch.zeros_like(neg_logits)
                 pos_loss = F.binary_cross_entropy_with_logits(
-                        pos_logits, pos_target, reduction='none')
+                    pos_logits, pos_target, reduction='none')
                 neg_loss = F.binary_cross_entropy_with_logits(
-                        neg_logits, neg_target, reduction='none')
+                    neg_logits, neg_target, reduction='none')
                 loss += (pos_loss + neg_loss).mean()
                 metrics.add(pos_loss=pos_loss.mean(), neg_loss=neg_loss.mean())
 
             if epoch == -1 or epoch > self.pretrain_epoch or \
-               (self.use_bow is not True and self.use_dssm is not True):
+                    (self.use_bow is not True and self.use_dssm is not True):
                 loss += nll_loss
                 loss += kl_loss
                 if self.use_pg:
                     posterior_probs = outputs.posterior_attn.gather(1, outputs.indexs.view(-1, 1))
                     reward = -perplexity(logits, target, self.weight, self.padding_idx) * 100
-                    pg_loss = -(reward.detach()-self.baseline) * posterior_probs.view(-1)
+                    pg_loss = -(reward.detach() - self.baseline) * posterior_probs.view(-1)
                     pg_loss = pg_loss.mean()
                     loss += pg_loss
                     metrics.add(pg_loss=pg_loss, reward=reward.mean())
@@ -322,29 +318,31 @@ class KnowledgeSeq2Seq(BaseModel):
         metrics.add(loss=loss)
         return metrics, scores
 
-    def iterate(self, inputs, optimizer=None, grad_clip=None, is_training=False, epoch=-1):
-        """
-        iterate
-        """
-        enc_inputs = inputs
-        dec_inputs = inputs.tgt[0][:, :-1], inputs.tgt[1] - 1
-        target = inputs.tgt[0][:, 1:]
 
-        outputs = self.forward(enc_inputs, dec_inputs, is_training=is_training)
-        metrics, scores = self.collect_metrics(outputs, target, epoch=epoch)
+def iterate(model, inputs, optimizer=None, grad_clip=None, is_training=False, epoch=-1):
+    """
+    iterate
+    """
+    enc_inputs = inputs
+    dec_inputs = inputs.tgt[0][:, :-1], inputs.tgt[1] - 1
+    target = inputs.tgt[0][:, 1:]
 
-        loss = metrics.loss
-        if torch.isnan(loss):
-            raise ValueError("nan loss encountered")
+    outputs = model(enc_inputs, dec_inputs, is_training=is_training)
+    model = model.module if hasattr(model, 'module') else model
+    metrics, scores = model.collect_metrics(outputs, target, epoch=epoch)
 
-        if is_training:
-            if self.use_pg:
-                self.baseline = 0.99 * self.baseline + 0.01 * metrics.reward.item()
-            assert optimizer is not None
-            optimizer.zero_grad()
-            loss.backward()
-            if grad_clip is not None and grad_clip > 0:
-                clip_grad_norm_(parameters=self.parameters(),
-                                max_norm=grad_clip)
-            optimizer.step()
-        return metrics, scores
+    loss = metrics.loss
+    if torch.isnan(loss):
+        raise ValueError("nan loss encountered")
+
+    if is_training:
+        if model.use_pg:
+            model.baseline = 0.99 * model.baseline + 0.01 * metrics.reward.item()
+        assert optimizer is not None
+        optimizer.zero_grad()
+        loss.backward()
+        if grad_clip is not None and grad_clip > 0:
+            clip_grad_norm_(parameters=model.parameters(),
+                            max_norm=grad_clip)
+        optimizer.step()
+    return metrics, scores

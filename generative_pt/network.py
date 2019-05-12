@@ -27,6 +27,7 @@ from source.utils.generator import TopKGenerator
 from source.utils.engine import evaluate, evaluate_generation
 from source.utils.misc import str2bool
 
+
 def model_config():
     """
     model_config
@@ -90,11 +91,11 @@ def model_config():
     misc_arg.add_argument("--valid_steps", type=int, default=200)
     misc_arg.add_argument("--batch_size", type=int, default=128)
     misc_arg.add_argument("--ckpt", type=str)
-    #misc_arg.add_argument("--ckpt", type=str, default="models/best.model")
+    # misc_arg.add_argument("--ckpt", type=str, default="models/best.model")
     misc_arg.add_argument("--check", action="store_true")
     misc_arg.add_argument("--test", action="store_true")
     misc_arg.add_argument("--interact", action="store_true")
-    #misc_arg.add_argument("--interact", type=str2bool, default=True)
+    # misc_arg.add_argument("--interact", type=str2bool, default=True)
 
     config = parser.parse_args()
 
@@ -108,9 +109,9 @@ def main():
     config = model_config()
     if config.check:
         config.save_dir = "./tmp/"
-    config.use_gpu = torch.cuda.is_available() and config.gpu >= 0
-    device = config.gpu
-    torch.cuda.set_device(device)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    config.gpu_nums = torch.cuda.device_count()
+    print('device', device, 'gpu nums', config.gpu_nums)
     # Data definition
     corpus = KnowledgeCorpus(data_dir=config.data_dir, data_prefix=config.data_prefix,
                              min_freq=0, max_vocab_size=config.max_vocab_size,
@@ -134,19 +135,21 @@ def main():
                              num_layers=config.num_layers, bidirectional=config.bidirectional,
                              attn_mode=config.attn, with_bridge=config.with_bridge,
                              tie_embedding=config.tie_embedding, dropout=config.dropout,
-                             use_gpu=config.use_gpu, 
                              use_bow=config.use_bow, use_dssm=config.use_dssm,
                              use_pg=config.use_pg, use_gs=config.use_gs,
                              pretrain_epoch=config.pretrain_epoch,
                              use_posterior=config.use_posterior,
                              weight_control=config.weight_control,
                              concat=config.decode_concat)
+    model.to(device)
+    if config.gpu_nums > 1:
+        model = torch.nn.DataParallel(model)
     model_name = model.__class__.__name__
     # Generator definition
     generator = TopKGenerator(model=model,
                               src_field=corpus.SRC, tgt_field=corpus.TGT, cue_field=corpus.CUE,
-                              max_length=config.max_dec_len, ignore_unk=config.ignore_unk, 
-			      length_average=config.length_average, use_gpu=config.use_gpu)
+                              max_length=config.max_dec_len, ignore_unk=config.ignore_unk,
+                              length_average=config.length_average)
     # Interactive generation testing
     if config.interact and config.ckpt:
         model.load(config.ckpt)
@@ -172,8 +175,9 @@ def main():
             model.parameters(), lr=config.lr)
         # Learning rate scheduler
         if config.lr_decay is not None and 0 < config.lr_decay < 1.0:
-            lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, 
-                            factor=config.lr_decay, patience=1, verbose=True, min_lr=1e-5)
+            lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
+                                                                      factor=config.lr_decay, patience=1, verbose=True,
+                                                                      min_lr=1e-5)
         else:
             lr_scheduler = None
         # Save directory
